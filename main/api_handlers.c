@@ -1,6 +1,10 @@
 #include "api_handlers.h"
 
 #include "esp_log.h"
+#include "plc_client.h"
+#include "plc_gateway_state.h"
+
+#include <stdio.h>
 
 static const char *TAG = "API";
 
@@ -18,61 +22,69 @@ static esp_err_t api_health_handler(httpd_req_t *req)
 
 static esp_err_t api_status_handler(httpd_req_t *req)
 {
-    const char *json =
-            "{"
-            "\"connection\":{"
-            "\"ip\":\"192.168.4.1\","
-            "\"port\":0,"
-            "\"mode\":\"STOP\","
-            "\"uptime\":\"00:00:00\","
-            "\"lastExchangeAgo\":\"никогда\","
-            "\"linkStatus\":\"NO_LINK\""
-            "},"
-            "\"performance\":{"
-            "\"scanAvgMs\":0,"
-            "\"scanMaxMs\":0,"
-            "\"scanAvgUs\":0,"
-            "\"scanMaxUs\":0,"
-            "\"workAvgMs\":0,"
-            "\"workMaxMs\":0,"
-            "\"workAvgUs\":0,"
-            "\"workMaxUs\":0,"
-            "\"cycleRealAvgMs\":0,"
-            "\"cycleRealMaxMs\":0,"
-            "\"scanLimitMs\":10,"
-            "\"cpuLoadPercent\":0,"
-            "\"memoryUsagePercent\":0,"
-            "\"crcErrors\":0,"
-            "\"timeouts\":0,"
-            "\"scanLongSteps\":0,"
-            "\"workLongSteps\":0"
-            "},"
-            "\"ioSummary\":{"
-            "\"diUsed\":0,"
-            "\"diTotal\":8,"
-            "\"doUsed\":0,"
-            "\"doTotal\":8,"
-            "\"aiUsed\":0,"
-            "\"aiTotal\":0,"
-            "\"pwmUsed\":0,"
-            "\"pwmTotal\":0"
-            "},"
-            "\"activeGraph\":{"
-            "\"name\":\"active_graph\","
-            "\"version\":\"—\","
-            "\"nodes\":0,"
-            "\"connections\":0,"
-            "\"inputs\":0,"
-            "\"outputs\":0,"
-            "\"compileErrors\":0,"
-            "\"activatedAt\":\"—\","
-            "\"runState\":\"STOP\""
-            "},"
-            "\"alarms\":[],"
-            "\"nodes\":[],"
-            "\"isLoading\":false,"
-            "\"errorMessage\":null"
-            "}";
+    (void)plc_client_get_status_ext();
+
+    plc_gateway_state_t st;
+    plc_gateway_state_get(&st);
+
+    char json[4096];
+
+    snprintf(
+        json,
+        sizeof(json),
+        "{"
+        "\"connection\":{"
+        "\"ip\":\"192.168.4.1\","
+        "\"port\":0,"
+        "\"mode\":\"%s\","
+        "\"uptime\":\"running\","
+        "\"lastExchangeAgo\":\"online\","
+        "\"linkStatus\":\"%s\""
+        "},"
+        "\"performance\":{"
+        "\"scanAvgMs\":%lu,"
+        "\"scanMaxMs\":%lu,"
+        "\"scanAvgUs\":%lu,"
+        "\"scanMaxUs\":%lu,"
+        "\"crcErrors\":%lu,"
+        "\"timeouts\":%lu"
+        "},"
+        "\"ioSummary\":{"
+        "\"diUsed\":0,"
+        "\"diTotal\":8,"
+        "\"doUsed\":0,"
+        "\"doTotal\":8,"
+        "\"aiUsed\":0,"
+        "\"aiTotal\":0"
+        "},"
+        "\"activeGraph\":{"
+        "\"name\":\"active_graph\","
+        "\"version\":\"%lu\","
+        "\"nodes\":%lu,"
+        "\"connections\":0,"
+        "\"inputs\":0,"
+        "\"outputs\":0,"
+        "\"compileErrors\":0,"
+        "\"activatedAt\":\"running\","
+        "\"runState\":\"%s\""
+        "},"
+        "\"alarms\":[],"
+        "\"nodes\":[],"
+        "\"isLoading\":false,"
+        "\"errorMessage\":null"
+        "}",
+        st.safe_or_fault ? "SAFE" : "RUN",
+        st.connected ? "ONLINE" : "OFFLINE",
+        (unsigned long)st.cycle_ms,
+        (unsigned long)st.cycle_ms,
+        (unsigned long)st.last_cycle_us,
+        (unsigned long)st.max_cycle_us,
+        (unsigned long)st.crc_errors,
+        (unsigned long)st.timeouts,
+        (unsigned long)st.active_graph_version,
+        (unsigned long)st.node_count,
+        st.safe_or_fault ? "SAFE" : "RUN"
+    );
 
     return send_json(req, json);
 }
@@ -90,16 +102,33 @@ static esp_err_t api_ok_handler(httpd_req_t *req)
 
 static esp_err_t api_mem_info_handler(httpd_req_t *req)
 {
-    return send_json(req,
-                     "{"
-                     "\"ok\":true,"
-                     "\"values\":{"
-                     "\"boolCount\":64,"
-                     "\"intCount\":64,"
-                     "\"realCount\":64"
-                     "}"
-                     "}"
+    uint8_t rsp[256];
+    uint16_t rsp_len = 0u;
+
+    if (plc_client_mem_info(rsp, sizeof(rsp), &rsp_len) != ESP_OK) {
+        return send_json(req, "{\"ok\":false}");
+    }
+
+    if (rsp_len < 20u) {
+        return send_json(req, "{\"ok\":false}");
+    }
+
+    uint16_t bool_count = (uint16_t)(rsp[12] | (rsp[13] << 8u));
+    uint16_t int_count = (uint16_t)(rsp[14] | (rsp[15] << 8u));
+    uint16_t real_count = (uint16_t)(rsp[16] | (rsp[17] << 8u));
+
+    char json[256];
+
+    snprintf(
+        json,
+        sizeof(json),
+        "{\"ok\":true,\"values\":{\"boolCount\":%u,\"intCount\":%u,\"realCount\":%u}}",
+        bool_count,
+        int_count,
+        real_count
     );
+
+    return send_json(req, json);
 }
 
 static esp_err_t api_mem_reset_handler(httpd_req_t *req)
@@ -109,6 +138,13 @@ static esp_err_t api_mem_reset_handler(httpd_req_t *req)
 
 static esp_err_t api_mem_read_handler(httpd_req_t *req)
 {
+    uint8_t rsp[1024];
+    uint16_t rsp_len = 0u;
+
+    if (plc_client_mem_read(0u, 0u, 8u, rsp, sizeof(rsp), &rsp_len) != ESP_OK) {
+        return send_json(req, "{\"ok\":false,\"values\":[]}");
+    }
+
     return send_json(req, "{\"ok\":true,\"values\":[]}");
 }
 
