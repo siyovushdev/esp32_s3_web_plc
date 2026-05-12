@@ -3,6 +3,9 @@
 #include "plc_protocol.h"
 #include "plc_uart_client.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #include <string.h>
 
 static uint16_t s_seq = 1u;
@@ -35,10 +38,33 @@ static esp_err_t plc_request(uint8_t cmd,
     );
 }
 
+static void plc_poll_task(void *arg)
+{
+    (void)arg;
+
+    for (;;) {
+        (void)plc_client_get_status_ext();
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
 esp_err_t plc_client_init(void)
 {
     plc_gateway_state_init();
     return plc_uart_client_init();
+}
+
+void plc_client_start_polling(void)
+{
+    xTaskCreatePinnedToCore(
+        plc_poll_task,
+        "plc_poll",
+        4096,
+        NULL,
+        5,
+        NULL,
+        1
+    );
 }
 
 esp_err_t plc_client_get_status_ext(void)
@@ -122,6 +148,36 @@ esp_err_t plc_client_release_output(uint16_t node_index)
         PLC_LINK_CMD_RELEASE_OUTPUT,
         body,
         sizeof(body),
+        rsp,
+        sizeof(rsp),
+        &rsp_len
+    );
+}
+
+esp_err_t plc_client_safe_reset(void)
+{
+    uint8_t rsp[64];
+    uint16_t rsp_len = 0u;
+
+    return plc_request(
+        PLC_LINK_CMD_SAFE_RESET,
+        NULL,
+        0u,
+        rsp,
+        sizeof(rsp),
+        &rsp_len
+    );
+}
+
+esp_err_t plc_client_activate(void)
+{
+    uint8_t rsp[64];
+    uint16_t rsp_len = 0u;
+
+    return plc_request(
+        PLC_LINK_CMD_ACTIVATE,
+        NULL,
+        0u,
         rsp,
         sizeof(rsp),
         &rsp_len
