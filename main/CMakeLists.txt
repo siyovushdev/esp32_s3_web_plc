@@ -8,6 +8,8 @@ idf_component_register(
         "plc_uart_client.c"
         "plc_gateway_state.c"
         "plc_client.c"
+        "plc_graph_storage.c"
+        "plc_graph_builder.c"
         INCLUDE_DIRS
         "."
         REQUIRES
@@ -18,6 +20,7 @@ idf_component_register(
         nvs_flash
         littlefs
         driver
+        mbedtls
 )
 
 littlefs_create_partition_image(storage /home/siovush/plc-web-hmi/dist FLASH_IN_PROJECT)
