@@ -20,6 +20,8 @@ void app_main(void)
 
     ESP_ERROR_CHECK(plc_client_init());
 
+    plc_client_start_polling();
+
     ESP_ERROR_CHECK(wifi_ap_start());
     ESP_ERROR_CHECK(web_server_start());
 }
