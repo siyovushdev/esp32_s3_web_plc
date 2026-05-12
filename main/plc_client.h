@@ -11,6 +11,7 @@ extern "C" {
 #endif
 
 esp_err_t plc_client_init(void);
+void plc_client_start_polling(void);
 
 esp_err_t plc_client_get_status_ext(void);
 
@@ -24,6 +25,10 @@ esp_err_t plc_client_force_output(uint16_t node_index,
                                   uint32_t hold_ms);
 
 esp_err_t plc_client_release_output(uint16_t node_index);
+
+esp_err_t plc_client_safe_reset(void);
+
+esp_err_t plc_client_activate(void);
 
 esp_err_t plc_client_mem_info(uint8_t *rsp,
                               size_t rsp_cap,
