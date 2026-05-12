@@ -36,6 +36,12 @@ esp_err_t plc_client_mem_read(uint8_t mem_type,
                               size_t rsp_cap,
                               uint16_t *rsp_len);
 
+esp_err_t plc_client_mem_write(uint8_t mem_type,
+                               uint16_t index,
+                               uint16_t count,
+                               const uint8_t *encoded_values,
+                               uint16_t encoded_values_len);
+
 #ifdef __cplusplus
 }
 #endif
