@@ -1,0 +1,6 @@
+"-specs=/home/siovush/esp/esp32_s3_web_plc/build/bootloader/specs/picolibc.specs"
+-mlongcalls
+-fno-builtin-memcpy
+-fno-builtin-memset
+-fno-builtin-bzero
+-fno-rtti

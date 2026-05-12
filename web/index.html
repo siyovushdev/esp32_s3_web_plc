@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>ESP32-S3 PLC Gateway</title>
+</head>
+<body>
+<h1>ESP32-S3 Web UI работает</h1>
+<p>Static file served from LittleFS.</p>
+
+<script>
+    fetch('/api/ping')
+        .then(r => r.json())
+        .then(console.log);
+</script>
+</body>
+</html>
