@@ -5,6 +5,7 @@
 
 #include "wifi_ap.h"
 #include "web_server.h"
+#include "plc_client.h"
 
 static const char *TAG = "MAIN";
 
@@ -16,6 +17,8 @@ void app_main(void)
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+    ESP_ERROR_CHECK(plc_client_init());
 
     ESP_ERROR_CHECK(wifi_ap_start());
     ESP_ERROR_CHECK(web_server_start());
