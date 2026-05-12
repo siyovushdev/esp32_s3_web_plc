@@ -165,3 +165,33 @@ esp_err_t plc_client_mem_read(uint8_t mem_type,
         rsp_len
     );
 }
+
+esp_err_t plc_client_mem_write(uint8_t mem_type,
+                               uint16_t index,
+                               uint16_t count,
+                               const uint8_t *encoded_values,
+                               uint16_t encoded_values_len)
+{
+    uint8_t body[PLC_LINK_MAX_BODY_SIZE];
+    memset(body, 0, sizeof(body));
+
+    body[0] = mem_type;
+    plc_put_u16_le(&body[2], index);
+    plc_put_u16_le(&body[4], count);
+
+    if (encoded_values != NULL && encoded_values_len != 0u) {
+        memcpy(&body[8], encoded_values, encoded_values_len);
+    }
+
+    uint8_t rsp[64];
+    uint16_t rsp_len = 0u;
+
+    return plc_request(
+        PLC_LINK_CMD_MEM_WRITE,
+        body,
+        (uint16_t)(8u + encoded_values_len),
+        rsp,
+        sizeof(rsp),
+        &rsp_len
+    );
+}
