@@ -4,6 +4,10 @@ idf_component_register(
         "web_server.c"
         "wifi_ap.c"
         "api_handlers.c"
+        "plc_frame.c"
+        "plc_uart_client.c"
+        "plc_gateway_state.c"
+        "plc_client.c"
         INCLUDE_DIRS
         "."
         REQUIRES
@@ -13,6 +17,7 @@ idf_component_register(
         esp_event
         nvs_flash
         littlefs
+        driver
 )
 
 littlefs_create_partition_image(storage /home/siovush/plc-web-hmi/dist FLASH_IN_PROJECT)
