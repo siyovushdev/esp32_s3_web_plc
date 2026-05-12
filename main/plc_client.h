@@ -30,6 +30,10 @@ esp_err_t plc_client_safe_reset(void);
 
 esp_err_t plc_client_activate(void);
 
+esp_err_t plc_client_upload_graph_image(const uint8_t *image,
+                                        uint32_t image_size,
+                                        uint32_t graph_version);
+
 esp_err_t plc_client_mem_info(uint8_t *rsp,
                               size_t rsp_cap,
                               uint16_t *rsp_len);
@@ -46,6 +50,8 @@ esp_err_t plc_client_mem_write(uint8_t mem_type,
                                uint16_t count,
                                const uint8_t *encoded_values,
                                uint16_t encoded_values_len);
+
+uint32_t plc_client_crc32(const uint8_t *data, uint32_t len);
 
 #ifdef __cplusplus
 }
