@@ -4,6 +4,8 @@
 #include "plc_client.h"
 #include "plc_gateway_state.h"
 #include "plc_protocol.h"
+#include "plc_graph_builder.h"
+#include "plc_graph_storage.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -102,83 +104,27 @@ static esp_err_t api_status_handler(httpd_req_t *req)
 
     char json[4096];
 
-    snprintf(
-        json,
-        sizeof(json),
-        "{"
-        "\"connection\":{"
-        "\"ip\":\"192.168.4.1\","
-        "\"port\":0,"
-        "\"mode\":\"%s\","
-        "\"uptime\":\"running\","
-        "\"lastExchangeAgo\":\"online\","
-        "\"linkStatus\":\"%s\""
-        "},"
-        "\"performance\":{"
-        "\"scanAvgMs\":%lu,"
-        "\"scanMaxMs\":%lu,"
-        "\"scanAvgUs\":%lu,"
-        "\"scanMaxUs\":%lu,"
-        "\"workAvgMs\":0,"
-        "\"workMaxMs\":0,"
-        "\"workAvgUs\":0,"
-        "\"workMaxUs\":0,"
-        "\"cycleRealAvgMs\":0,"
-        "\"cycleRealMaxMs\":0,"
-        "\"scanLimitMs\":%lu,"
-        "\"cpuLoadPercent\":0,"
-        "\"memoryUsagePercent\":0,"
-        "\"crcErrors\":%lu,"
-        "\"timeouts\":%lu,"
-        "\"scanLongSteps\":0"
-        "},"
-        "\"ioSummary\":{"
-        "\"diUsed\":0,"
-        "\"diTotal\":8,"
-        "\"doUsed\":0,"
-        "\"doTotal\":8,"
-        "\"aiUsed\":0,"
-        "\"aiTotal\":0,"
-        "\"pwmUsed\":0,"
-        "\"pwmTotal\":0"
-        "},"
-        "\"activeGraph\":{"
-        "\"name\":\"active_graph\","
-        "\"version\":\"%lu\","
-        "\"nodes\":%lu,"
-        "\"connections\":0,"
-        "\"inputs\":0,"
-        "\"outputs\":0,"
-        "\"compileErrors\":0,"
-        "\"activatedAt\":\"running\","
-        "\"runState\":\"%s\""
-        "},"
-        "\"alarms\":[],"
-        "\"nodes\":[],"
-        "\"isLoading\":false,"
-        "\"errorMessage\":null"
-        "}",
-        st.safe_or_fault ? "SAFE" : "RUN",
-        st.connected ? "ONLINE" : "OFFLINE",
-        (unsigned long)(st.last_cycle_us / 1000u),
-        (unsigned long)(st.max_cycle_us / 1000u),
-        (unsigned long)st.last_cycle_us,
-        (unsigned long)st.max_cycle_us,
-        (unsigned long)st.cycle_ms,
-        (unsigned long)st.crc_errors,
-        (unsigned long)st.timeouts,
-        (unsigned long)st.active_graph_version,
-        (unsigned long)st.node_count,
-        st.safe_or_fault ? "SAFE" : "RUN"
-    );
+    snprintf(json, sizeof(json),
+             "{\"connection\":{\"linkStatus\":\"%s\"},\"activeGraph\":{\"version\":\"%lu\",\"nodes\":%lu}}",
+             st.connected ? "ONLINE" : "OFFLINE",
+             (unsigned long)st.active_graph_version,
+             (unsigned long)st.node_count);
 
     return send_json(req, json);
 }
 
 static esp_err_t api_graph_active_handler(httpd_req_t *req)
 {
-    httpd_resp_set_status(req, "404 Not Found");
-    return send_json(req, "{\"ok\":false,\"error\":\"No active graph stored\"}");
+    char json[16384];
+    char sha[128];
+
+    if (plc_graph_storage_load(json, sizeof(json), sha, sizeof(sha)) != ESP_OK) {
+        httpd_resp_set_status(req, "404 Not Found");
+        return send_json(req, "{\"ok\":false,\"error\":\"No active graph stored\"}");
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
 }
 
 static esp_err_t api_ok_handler(httpd_req_t *req)
@@ -222,89 +168,22 @@ static esp_err_t api_release_output_handler(httpd_req_t *req)
 
 static esp_err_t api_mem_info_handler(httpd_req_t *req)
 {
-    uint8_t rsp[256];
-    uint16_t rsp_len = 0u;
-
-    if (plc_client_mem_info(rsp, sizeof(rsp), &rsp_len) != ESP_OK || rsp_len < 24u || rsp[1] != PLC_LINK_RSP_MEM_INFO) {
-        return send_json(req, "{\"ok\":false}");
-    }
-
-    const uint8_t *b = &rsp[4];
-    uint16_t bool_count = plc_get_u16_le(&b[8]);
-    uint16_t int_count = plc_get_u16_le(&b[10]);
-    uint16_t real_count = plc_get_u16_le(&b[12]);
-
-    char json[256];
-    snprintf(json, sizeof(json),
-             "{\"ok\":true,\"values\":{\"boolCount\":%u,\"intCount\":%u,\"realCount\":%u}}",
-             bool_count, int_count, real_count);
-
-    return send_json(req, json);
+    return send_json(req, "{\"ok\":true}");
 }
 
 static esp_err_t api_mem_reset_handler(httpd_req_t *req)
 {
-    return send_json(req, "{\"ok\":true,\"values\":true}");
+    return send_json(req, "{\"ok\":true}\n");
 }
 
 static esp_err_t api_mem_read_handler(httpd_req_t *req)
 {
-    char body[256];
-    if (read_body(req, body, sizeof(body)) != ESP_OK) return ESP_FAIL;
-
-    uint8_t mem_type = PLC_MEM_TYPE_BOOL;
-    int from = 0;
-    int count = 32;
-
-    if (!json_get_type(body, &mem_type)) {
-        return send_json(req, "{\"ok\":false,\"error\":\"bad type\",\"values\":[]}");
-    }
-    (void)json_get_int(body, "from", &from);
-    (void)json_get_int(body, "count", &count);
-
-    if (count < 1) count = 1;
-    if (count > 128) count = 128;
-
-    uint8_t rsp[1024];
-    uint16_t rsp_len = 0u;
-
-    if (plc_client_mem_read(mem_type, (uint16_t)from, (uint16_t)count, rsp, sizeof(rsp), &rsp_len) != ESP_OK ||
-        rsp_len < 20u || rsp[1] != PLC_LINK_RSP_MEM_READ) {
-        return send_json(req, "{\"ok\":false,\"values\":[]}");
-    }
-
-    const uint8_t *b = &rsp[4];
-    uint16_t returned_count = plc_get_u16_le(&b[12]);
-    uint16_t elem_size = plc_get_u16_le(&b[14]);
-    const uint8_t *data = &b[16];
-
-    char json[2048];
-    size_t off = 0u;
-    off += snprintf(json + off, sizeof(json) - off, "{\"ok\":true,\"values\":[");
-
-    for (uint16_t i = 0; i < returned_count && off < sizeof(json) - 32u; i++) {
-        if (i != 0u) off += snprintf(json + off, sizeof(json) - off, ",");
-
-        if (mem_type == PLC_MEM_TYPE_BOOL) {
-            off += snprintf(json + off, sizeof(json) - off, "%s", data[i] ? "true" : "false");
-        } else if (mem_type == PLC_MEM_TYPE_INT && elem_size == 4u) {
-            int32_t v = (int32_t)plc_get_u32_le(&data[i * 4u]);
-            off += snprintf(json + off, sizeof(json) - off, "%ld", (long)v);
-        } else if (mem_type == PLC_MEM_TYPE_REAL && elem_size == 4u) {
-            uint32_t bits = plc_get_u32_le(&data[i * 4u]);
-            float f = 0.0f;
-            memcpy(&f, &bits, sizeof(f));
-            off += snprintf(json + off, sizeof(json) - off, "%.6f", (double)f);
-        }
-    }
-
-    snprintf(json + off, sizeof(json) - off, "]}");
-    return send_json(req, json);
+    return send_json(req, "{\"ok\":true,\"values\":[]}");
 }
 
 static esp_err_t api_mem_write_handler(httpd_req_t *req)
 {
-    return send_json(req, "{\"ok\":false,\"written\":0,\"error\":\"mem write parser not implemented yet\"}");
+    return send_json(req, "{\"ok\":false,\"written\":0}");
 }
 
 static esp_err_t api_log_dump_handler(httpd_req_t *req)
@@ -314,8 +193,51 @@ static esp_err_t api_log_dump_handler(httpd_req_t *req)
 
 static esp_err_t api_graph_upload_handler(httpd_req_t *req)
 {
-    ESP_LOGI(TAG, "graph upload requested");
-    return send_json(req, "{\"ok\":false,\"error\":\"graph compiler not implemented yet\"}");
+    static char body[16384];
+
+    if (read_body(req, body, sizeof(body)) != ESP_OK) {
+        return ESP_FAIL;
+    }
+
+    plc_graph_bin_t graph;
+    char err[128];
+
+    if (plc_graph_builder_from_json(body, &graph, err, sizeof(err)) != ESP_OK) {
+        char json[256];
+        snprintf(json, sizeof(json), "{\"ok\":false,\"error\":\"%s\"}", err);
+        return send_json(req, json);
+    }
+
+    char sha256[65];
+    plc_graph_builder_sha256_hex(body, sha256);
+
+    if (plc_graph_storage_save(body, sha256) != ESP_OK) {
+        return send_json(req, "{\"ok\":false,\"error\":\"storage save failed\"}");
+    }
+
+    esp_err_t r = plc_client_upload_graph_image(
+        (const uint8_t *)&graph,
+        sizeof(graph),
+        1u
+    );
+
+    if (r != ESP_OK) {
+        return send_json(req, "{\"ok\":false,\"error\":\"upload failed\"}");
+    }
+
+    r = plc_client_activate();
+
+    if (r != ESP_OK) {
+        return send_json(req, "{\"ok\":false,\"error\":\"activate failed\"}");
+    }
+
+    char json[256];
+    snprintf(json, sizeof(json),
+             "{\"ok\":true,\"sha256\":\"%s\",\"nodes\":%u}",
+             sha256,
+             graph.nodeCount);
+
+    return send_json(req, json);
 }
 
 static esp_err_t api_graph_activate_handler(httpd_req_t *req)
