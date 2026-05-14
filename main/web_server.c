@@ -1,5 +1,6 @@
 #include "web_server.h"
 #include "api_handlers.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -7,7 +8,6 @@
 #include "esp_log.h"
 #include "esp_http_server.h"
 #include "esp_littlefs.h"
-#include "api_handlers.h"
 
 static const char *TAG = "WEB_SERVER";
 
@@ -31,16 +31,6 @@ static const char *get_content_type(const char *filename)
     return "text/plain";
 }
 
-static esp_err_t api_ping_handler(httpd_req_t *req)
-{
-    const char *json = "{\"status\":\"ok\",\"device\":\"esp32-s3-gateway\"}";
-
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
-
-    return ESP_OK;
-}
-
 static esp_err_t static_file_handler(httpd_req_t *req)
 {
     char filepath[FILE_PATH_MAX];
@@ -56,39 +46,32 @@ static esp_err_t static_file_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    size_t base_len = strlen(WEB_BASE_PATH);
-    size_t uri_len = strlen(uri);
+    const size_t base_len = strlen(WEB_BASE_PATH);
+    const size_t uri_len = strlen(uri);
 
-    if (base_len + uri_len + 1 > sizeof(filepath)) {
-        ESP_LOGW(TAG, "URI too long: %s", uri);
+    if (base_len + uri_len + 1u > sizeof(filepath)) {
+        ESP_LOGW(TAG, "URI too long");
         httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "URI too long");
         return ESP_FAIL;
     }
 
     memcpy(filepath, WEB_BASE_PATH, base_len);
-    memcpy(filepath + base_len, uri, uri_len + 1);
+    memcpy(filepath + base_len, uri, uri_len + 1u);
 
     struct stat file_stat;
     if (stat(filepath, &file_stat) != 0) {
-        ESP_LOGW(TAG, "File not found: %s", filepath);
-
         const char *fallback = WEB_BASE_PATH "/index.html";
-
-        if (strlen(fallback) + 1 > sizeof(filepath)) {
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Path error");
-            return ESP_FAIL;
-        }
-
-        strcpy(filepath, fallback);
+        strlcpy(filepath, fallback, sizeof(filepath));
 
         if (stat(filepath, &file_stat) != 0) {
+            ESP_LOGW(TAG, "File not found and fallback missing: %s", req->uri);
             httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
             return ESP_FAIL;
         }
     }
 
     FILE *file = fopen(filepath, "rb");
-    if (!file) {
+    if (file == NULL) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file");
         return ESP_FAIL;
     }
@@ -96,18 +79,15 @@ static esp_err_t static_file_handler(httpd_req_t *req)
     httpd_resp_set_type(req, get_content_type(filepath));
 
     size_t read_bytes;
-    while ((read_bytes = fread(scratch, 1, SCRATCH_BUFSIZE, file)) > 0) {
+    while ((read_bytes = fread(scratch, 1, SCRATCH_BUFSIZE, file)) > 0u) {
         if (httpd_resp_send_chunk(req, scratch, read_bytes) != ESP_OK) {
             fclose(file);
-            httpd_resp_sendstr_chunk(req, NULL);
             return ESP_FAIL;
         }
     }
 
     fclose(file);
-    httpd_resp_send_chunk(req, NULL, 0);
-
-    return ESP_OK;
+    return httpd_resp_send_chunk(req, NULL, 0);
 }
 
 static esp_err_t mount_littlefs(void)
@@ -129,7 +109,7 @@ static esp_err_t mount_littlefs(void)
     size_t used = 0;
     ret = esp_littlefs_info("storage", &total, &used);
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "LittleFS mounted. total=%d, used=%d", total, used);
+        ESP_LOGI(TAG, "LittleFS mounted. total=%u, used=%u", (unsigned)total, (unsigned)used);
     }
 
     return ESP_OK;
@@ -143,7 +123,8 @@ esp_err_t web_server_start(void)
     config.server_port = 80;
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.max_uri_handlers = 32;
-    config.stack_size = 8192;
+    config.stack_size = 16384;
+    config.lru_purge_enable = true;
 
     esp_err_t ret = httpd_start(&server, &config);
     if (ret != ESP_OK) {
@@ -160,7 +141,7 @@ esp_err_t web_server_start(void)
             .user_ctx = NULL,
     };
 
-    httpd_register_uri_handler(server, &static_files);
+    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &static_files));
 
     ESP_LOGI(TAG, "HTTP server started on port 80");
 
