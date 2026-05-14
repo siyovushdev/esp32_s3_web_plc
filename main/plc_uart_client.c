@@ -17,6 +17,38 @@ static const char *TAG = "plc_uart";
 static plc_uart_stats_t s_stats;
 static SemaphoreHandle_t s_uart_mutex;
 
+static uint16_t plc_get_u16_le_local(const uint8_t *p)
+{
+    return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8u));
+}
+
+static esp_err_t plc_uart_read_exact(uint8_t *dst, size_t len, uint32_t timeout_ms)
+{
+    if (dst == NULL || len == 0u) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    size_t pos = 0u;
+
+    while (pos < len) {
+        const size_t left = len - pos;
+        const int rd = uart_read_bytes(
+                PLC_UART_PORT,
+                &dst[pos],
+                left,
+                pdMS_TO_TICKS(timeout_ms)
+        );
+
+        if (rd <= 0) {
+            return ESP_ERR_TIMEOUT;
+        }
+
+        pos += (size_t)rd;
+    }
+
+    return ESP_OK;
+}
+
 esp_err_t plc_uart_client_init(void)
 {
     const uart_config_t cfg = {
@@ -52,7 +84,10 @@ esp_err_t plc_uart_client_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "UART2 initialized");
+    ESP_LOGI(TAG, "UART2 initialized: baud=%d tx=%d rx=%d",
+             PLC_UART_BAUD,
+             (int)PLC_UART_TX_PIN,
+             (int)PLC_UART_RX_PIN);
     return ESP_OK;
 }
 
@@ -70,6 +105,8 @@ esp_err_t plc_uart_client_request(const uint8_t *payload,
     if (s_uart_mutex == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
+
+    *rsp_len = 0u;
 
     if (xSemaphoreTake(s_uart_mutex, pdMS_TO_TICKS(timeout_ms + 100u)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
@@ -90,16 +127,25 @@ esp_err_t plc_uart_client_request(const uint8_t *payload,
 
     if (fr != PLC_FRAME_OK) {
         s_stats.size_errors++;
+        ESP_LOGW(TAG, "TX frame build failed: fr=%d payload_len=%u", (int)fr, (unsigned)payload_len);
         result = ESP_FAIL;
         goto done;
     }
 
     uart_flush_input(PLC_UART_PORT);
 
-    int written = uart_write_bytes(PLC_UART_PORT, frame, frame_len);
+    const int written = uart_write_bytes(PLC_UART_PORT, frame, frame_len);
     if (written != frame_len) {
         s_stats.uart_errors++;
+        ESP_LOGW(TAG, "UART write failed: written=%d expected=%u", written, (unsigned)frame_len);
         result = ESP_FAIL;
+        goto done;
+    }
+
+    if (uart_wait_tx_done(PLC_UART_PORT, pdMS_TO_TICKS(timeout_ms)) != ESP_OK) {
+        s_stats.uart_errors++;
+        ESP_LOGW(TAG, "UART TX wait timeout");
+        result = ESP_ERR_TIMEOUT;
         goto done;
     }
 
@@ -107,24 +153,40 @@ esp_err_t plc_uart_client_request(const uint8_t *payload,
 
     uint8_t rx_buf[PLC_FRAME_MAX_WIRE_SIZE];
 
-    int rd = uart_read_bytes(
-            PLC_UART_PORT,
-            rx_buf,
-            sizeof(rx_buf),
-            pdMS_TO_TICKS(timeout_ms)
-    );
-
-    if (rd <= 0) {
+    result = plc_uart_read_exact(rx_buf, PLC_FRAME_LEN_SIZE, timeout_ms);
+    if (result != ESP_OK) {
         s_stats.timeouts++;
-        result = ESP_ERR_TIMEOUT;
+        ESP_LOGW(TAG, "RX timeout while reading length");
         goto done;
     }
 
+    const uint16_t rx_payload_len = plc_get_u16_le_local(rx_buf);
+    if (rx_payload_len == 0u ||
+        rx_payload_len > PLC_FRAME_MAX_PAYLOAD ||
+        rx_payload_len > rsp_cap) {
+        s_stats.size_errors++;
+        ESP_LOGW(TAG, "RX bad payload size: len=%u rsp_cap=%u",
+                 (unsigned)rx_payload_len,
+                 (unsigned)rsp_cap);
+        result = ESP_ERR_INVALID_SIZE;
+        goto done;
+    }
+
+    const size_t rx_rest_len = (size_t)rx_payload_len + PLC_FRAME_CRC_SIZE;
+    result = plc_uart_read_exact(&rx_buf[PLC_FRAME_LEN_SIZE], rx_rest_len, timeout_ms);
+    if (result != ESP_OK) {
+        s_stats.timeouts++;
+        ESP_LOGW(TAG, "RX timeout while reading payload/crc: payload_len=%u",
+                 (unsigned)rx_payload_len);
+        goto done;
+    }
+
+    const size_t rx_frame_len = PLC_FRAME_LEN_SIZE + (size_t)rx_payload_len + PLC_FRAME_CRC_SIZE;
     size_t consumed = 0u;
 
     fr = plc_frame_try_parse(
             rx_buf,
-            (size_t)rd,
+            rx_frame_len,
             rsp_payload,
             rsp_cap,
             rsp_len,
@@ -139,15 +201,28 @@ esp_err_t plc_uart_client_request(const uint8_t *payload,
 
         case PLC_FRAME_ERR_CRC:
             s_stats.crc_errors++;
+            ESP_LOGW(TAG, "RX CRC error: frame_len=%u", (unsigned)rx_frame_len);
             result = ESP_ERR_INVALID_CRC;
             break;
 
         case PLC_FRAME_ERR_SIZE:
             s_stats.size_errors++;
+            ESP_LOGW(TAG, "RX size error: payload_len=%u rsp_cap=%u",
+                     (unsigned)rx_payload_len,
+                     (unsigned)rsp_cap);
             result = ESP_ERR_INVALID_SIZE;
             break;
 
+        case PLC_FRAME_ERR_INCOMPLETE:
+            s_stats.timeouts++;
+            ESP_LOGW(TAG, "RX incomplete frame after exact read: frame_len=%u consumed=%u",
+                     (unsigned)rx_frame_len,
+                     (unsigned)consumed);
+            result = ESP_ERR_TIMEOUT;
+            break;
+
         default:
+            ESP_LOGW(TAG, "RX parse failed: fr=%d frame_len=%u", (int)fr, (unsigned)rx_frame_len);
             result = ESP_FAIL;
             break;
     }
