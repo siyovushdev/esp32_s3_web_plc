@@ -1,6 +1,6 @@
 #include "plc_graph_builder.h"
 
-#include "mbedtls/sha256.h"
+#include "psa/crypto.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -216,15 +216,23 @@ void plc_graph_builder_sha256_hex(const char *text,
                                   char out_hex[65])
 {
     uint8_t sha[32];
+    size_t sha_len = 0;
 
-    mbedtls_sha256_context ctx;
-    mbedtls_sha256_init(&ctx);
+    psa_crypto_init();
 
-    mbedtls_sha256_starts(&ctx, 0);
-    mbedtls_sha256_update(&ctx, (const uint8_t *)text, strlen(text));
-    mbedtls_sha256_finish(&ctx, sha);
+    psa_status_t st = psa_hash_compute(
+            PSA_ALG_SHA_256,
+            (const uint8_t *)text,
+            strlen(text),
+            sha,
+            sizeof(sha),
+            &sha_len
+    );
 
-    mbedtls_sha256_free(&ctx);
+    if (st != PSA_SUCCESS || sha_len != 32u) {
+        memset(out_hex, 0, 65);
+        return;
+    }
 
     for (uint8_t i = 0; i < 32u; i++) {
         sprintf(&out_hex[i * 2u], "%02x", sha[i]);

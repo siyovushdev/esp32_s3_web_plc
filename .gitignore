@@ -1,0 +1,57 @@
+# =========================
+# ESP-IDF
+# =========================
+build/
+sdkconfig.old
+dependencies.lock.old
+
+# Managed components cache
+managed_components/
+
+# =========================
+# CLion / JetBrains
+# =========================
+.idea/
+cmake-build-*/
+*.iml
+
+# =========================
+# CMake
+# =========================
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+Makefile
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# OS
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Python
+# =========================
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# =========================
+# Node / React / Vite
+# =========================
+web/node_modules/
+web/dist/
+web/.vite/
+
+# =========================
+# Temporary
+# =========================
+*.tmp
+*.swp

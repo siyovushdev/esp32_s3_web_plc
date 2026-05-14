@@ -66,9 +66,11 @@ static void plc_poll_task(void *arg)
 {
     (void)arg;
 
+    vTaskDelay(pdMS_TO_TICKS(5000));
+
     for (;;) {
         (void)plc_client_get_status_ext();
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
 

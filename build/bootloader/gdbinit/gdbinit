@@ -1,2 +1,0 @@
-source /home/siovush/esp/esp32_s3_web_plc/build/bootloader/gdbinit/symbols
-source /home/siovush/esp/esp32_s3_web_plc/build/bootloader/gdbinit/connect

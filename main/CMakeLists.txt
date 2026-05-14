@@ -19,7 +19,8 @@ idf_component_register(
         esp_event
         nvs_flash
         littlefs
-        driver
+        esp_driver_uart
+        esp_driver_gpio
         mbedtls
 )
 

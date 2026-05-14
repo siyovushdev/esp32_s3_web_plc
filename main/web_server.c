@@ -87,7 +87,7 @@ static esp_err_t static_file_handler(httpd_req_t *req)
         }
     }
 
-    FILE *file = fopen(filepath, "r");
+    FILE *file = fopen(filepath, "rb");
     if (!file) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file");
         return ESP_FAIL;

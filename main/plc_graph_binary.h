@@ -116,5 +116,5 @@ typedef struct {
     plc_node_bin_t nodes[PLC_GRAPH_MAX_NODES];
 } plc_graph_bin_t;
 
-_Static_assert(sizeof(plc_node_bin_t) == 96, "plc_node_bin_t size must match STM32 PlcNode");
-_Static_assert(sizeof(plc_graph_bin_t) == 9608, "plc_graph_bin_t size must match STM32 PlcGraph");
+_Static_assert(sizeof(plc_node_bin_t) == 100, "plc_node_bin_t size must match STM32 PlcNode");
+_Static_assert(sizeof(plc_graph_bin_t) == 10008, "plc_graph_bin_t size must match STM32 PlcGraph");
