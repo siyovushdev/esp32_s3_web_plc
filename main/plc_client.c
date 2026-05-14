@@ -17,7 +17,8 @@ static esp_err_t plc_request(uint8_t cmd,
                              uint16_t body_len,
                              uint8_t *rsp,
                              size_t rsp_cap,
-                             uint16_t *rsp_len)
+                             uint16_t *rsp_len,
+                             uint32_t timeout_ms)
 {
     uint8_t payload[PLC_LINK_MAX_PAYLOAD_SIZE];
 
@@ -36,7 +37,7 @@ static esp_err_t plc_request(uint8_t cmd,
         rsp,
         rsp_cap,
         rsp_len,
-        1000u
+        timeout_ms
     );
 }
 
@@ -45,12 +46,10 @@ static esp_err_t plc_request_ack(uint8_t cmd,
                                  uint16_t body_len,
                                  uint32_t timeout_ms)
 {
-    (void)timeout_ms;
-
     uint8_t rsp[64];
     uint16_t rsp_len = 0u;
 
-    esp_err_t r = plc_request(cmd, body, body_len, rsp, sizeof(rsp), &rsp_len);
+    esp_err_t r = plc_request(cmd, body, body_len, rsp, sizeof(rsp), &rsp_len, timeout_ms);
     if (r != ESP_OK) {
         return r;
     }
@@ -123,7 +122,8 @@ esp_err_t plc_client_get_status_ext(void)
         0u,
         rsp,
         sizeof(rsp),
-        &rsp_len
+        &rsp_len,
+        1000u
     );
 
     if (r != ESP_OK) {
@@ -153,7 +153,8 @@ esp_err_t plc_client_get_node(uint16_t node_index,
         sizeof(body),
         rsp,
         rsp_cap,
-        rsp_len
+        rsp_len,
+        1000u
     );
 }
 
@@ -239,7 +240,8 @@ esp_err_t plc_client_mem_info(uint8_t *rsp,
         0u,
         rsp,
         rsp_cap,
-        rsp_len
+        rsp_len,
+        1000u
     );
 }
 
@@ -263,7 +265,8 @@ esp_err_t plc_client_mem_read(uint8_t mem_type,
         sizeof(body),
         rsp,
         rsp_cap,
-        rsp_len
+        rsp_len,
+        1000u
     );
 }
 
