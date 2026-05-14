@@ -10,6 +10,7 @@
 
 #define PLC_UPLOAD_CHUNK_SIZE 512u
 
+
 static uint16_t s_seq = 1u;
 
 static esp_err_t plc_request(uint8_t cmd,
@@ -103,7 +104,7 @@ void plc_client_start_polling(void)
     xTaskCreatePinnedToCore(
         plc_poll_task,
         "plc_poll",
-        4096,
+        12288,
         NULL,
         5,
         NULL,

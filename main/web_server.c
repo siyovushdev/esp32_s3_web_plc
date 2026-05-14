@@ -37,37 +37,42 @@ static esp_err_t static_file_handler(httpd_req_t *req)
 
     const char *uri = req->uri;
 
-    if (strcmp(uri, "/") == 0) {
-        uri = "/index.html";
+    if (strncmp(uri, "/api/", 5) == 0) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "API route not found");
+        return ESP_FAIL;
     }
 
-    if (strstr(uri, "..")) {
+    if (strstr(uri, "..") != NULL) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid path");
         return ESP_FAIL;
     }
 
-    const size_t base_len = strlen(WEB_BASE_PATH);
-    const size_t uri_len = strlen(uri);
+    if (strcmp(uri, "/") == 0) {
+        uri = "/index.html";
+    }
 
-    if (base_len + uri_len + 1u > sizeof(filepath)) {
-        ESP_LOGW(TAG, "URI too long");
+    int written = snprintf(filepath, sizeof(filepath), "%s%s", WEB_BASE_PATH, uri);
+    if (written < 0 || written >= sizeof(filepath)) {
         httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "URI too long");
         return ESP_FAIL;
     }
 
-    memcpy(filepath, WEB_BASE_PATH, base_len);
-    memcpy(filepath + base_len, uri, uri_len + 1u);
-
     struct stat file_stat;
-    if (stat(filepath, &file_stat) != 0) {
-        const char *fallback = WEB_BASE_PATH "/index.html";
-        strlcpy(filepath, fallback, sizeof(filepath));
+    bool is_spa_fallback = false;
 
-        if (stat(filepath, &file_stat) != 0) {
-            ESP_LOGW(TAG, "File not found and fallback missing: %s", req->uri);
-            httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+    if (stat(filepath, &file_stat) != 0) {
+        written = snprintf(filepath, sizeof(filepath), "%s/index.html", WEB_BASE_PATH);
+        if (written < 0 || written >= sizeof(filepath)) {
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Path error");
             return ESP_FAIL;
         }
+
+        if (stat(filepath, &file_stat) != 0) {
+            httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "index.html not found");
+            return ESP_FAIL;
+        }
+
+        is_spa_fallback = true;
     }
 
     FILE *file = fopen(filepath, "rb");
@@ -76,10 +81,16 @@ static esp_err_t static_file_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    httpd_resp_set_type(req, get_content_type(filepath));
+    if (is_spa_fallback) {
+        httpd_resp_set_type(req, "text/html");
+    } else {
+        httpd_resp_set_type(req, get_content_type(filepath));
+    }
+
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
 
     size_t read_bytes;
-    while ((read_bytes = fread(scratch, 1, SCRATCH_BUFSIZE, file)) > 0u) {
+    while ((read_bytes = fread(scratch, 1, SCRATCH_BUFSIZE, file)) > 0) {
         if (httpd_resp_send_chunk(req, scratch, read_bytes) != ESP_OK) {
             fclose(file);
             return ESP_FAIL;
@@ -87,6 +98,7 @@ static esp_err_t static_file_handler(httpd_req_t *req)
     }
 
     fclose(file);
+
     return httpd_resp_send_chunk(req, NULL, 0);
 }
 

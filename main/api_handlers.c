@@ -105,10 +105,24 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     char json[4096];
 
     snprintf(json, sizeof(json),
-             "{\"connection\":{\"linkStatus\":\"%s\"},\"activeGraph\":{\"version\":\"%lu\",\"nodes\":%lu}}",
+             "{"
+             "\"connection\":{\"linkStatus\":\"%s\"},"
+             "\"activeGraph\":{\"version\":\"%lu\",\"nodes\":%lu},"
+             "\"runtime\":{"
+             "\"scanAvgMs\":0,"
+             "\"scanMaxMs\":0,"
+             "\"cycleMs\":0,"
+             "\"uptimeMs\":0"
+             "},"
+             "\"io\":{"
+             "\"di\":[],"
+             "\"do\":[]"
+             "}"
+             "}",
              st.connected ? "ONLINE" : "OFFLINE",
              (unsigned long)st.active_graph_version,
-             (unsigned long)st.node_count);
+             (unsigned long)st.node_count
+    );
 
     return send_json(req, json);
 }

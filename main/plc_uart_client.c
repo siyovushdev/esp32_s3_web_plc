@@ -9,10 +9,13 @@
 
 #define PLC_UART_PORT UART_NUM_2
 #define PLC_UART_TX_PIN GPIO_NUM_17
-#define PLC_UART_RX_PIN GPIO_NUM_18
+#define PLC_UART_RX_PIN GPIO_NUM_16
 #define PLC_UART_BAUD 115200
 
 static const char *TAG = "plc_uart";
+
+static uint8_t s_tx_frame[PLC_FRAME_MAX_WIRE_SIZE];
+static uint8_t s_rx_frame[PLC_FRAME_MAX_WIRE_SIZE];
 
 static plc_uart_stats_t s_stats;
 static SemaphoreHandle_t s_uart_mutex;
@@ -114,14 +117,14 @@ esp_err_t plc_uart_client_request(const uint8_t *payload,
 
     esp_err_t result = ESP_FAIL;
 
-    uint8_t frame[PLC_FRAME_MAX_WIRE_SIZE];
+    uint8_t *frame = s_tx_frame;
     uint16_t frame_len = 0u;
 
     plc_frame_result_t fr = plc_frame_build(
             payload,
             payload_len,
             frame,
-            sizeof(frame),
+            PLC_FRAME_MAX_WIRE_SIZE,
             &frame_len
     );
 
@@ -133,7 +136,7 @@ esp_err_t plc_uart_client_request(const uint8_t *payload,
     }
 
     uart_flush_input(PLC_UART_PORT);
-
+    ESP_LOG_BUFFER_HEX(TAG, frame, frame_len);
     const int written = uart_write_bytes(PLC_UART_PORT, frame, frame_len);
     if (written != frame_len) {
         s_stats.uart_errors++;
@@ -151,7 +154,7 @@ esp_err_t plc_uart_client_request(const uint8_t *payload,
 
     s_stats.tx_frames++;
 
-    uint8_t rx_buf[PLC_FRAME_MAX_WIRE_SIZE];
+    uint8_t *rx_buf = s_rx_frame;
 
     result = plc_uart_read_exact(rx_buf, PLC_FRAME_LEN_SIZE, timeout_ms);
     if (result != ESP_OK) {
@@ -196,6 +199,11 @@ esp_err_t plc_uart_client_request(const uint8_t *payload,
     switch (fr) {
         case PLC_FRAME_OK:
             s_stats.rx_frames++;
+            ESP_LOGI(TAG, "RX OK: payload_len=%u rsp_cmd=0x%02X seq=%02X %02X",
+                     (unsigned)*rsp_len,
+                     (*rsp_len > 1u) ? rsp_payload[1] : 0u,
+                     (*rsp_len > 2u) ? rsp_payload[2] : 0u,
+                     (*rsp_len > 3u) ? rsp_payload[3] : 0u);
             result = ESP_OK;
             break;
 
