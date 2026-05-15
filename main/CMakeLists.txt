@@ -16,6 +16,7 @@ idf_component_register(
         esp_http_server
         esp_netif
         esp_wifi
+        esp_timer
         esp_event
         nvs_flash
         littlefs

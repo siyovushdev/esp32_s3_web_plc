@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <esp_timer.h>
 
 static const char *TAG = "API";
 
@@ -97,31 +98,191 @@ static esp_err_t api_health_handler(httpd_req_t *req)
     return send_json(req, "{\"ok\":true}");
 }
 
+static const char *run_state_to_str(uint32_t run_state)
+{
+    switch (run_state) {
+        case 1u: return "RUN";
+        case 2u: return "SAFE";
+        case 3u: return "FAULT";
+        case 0u:
+        default: return "STOP";
+    }
+}
+
+static const char *node_type_to_str(uint32_t type)
+{
+    switch (type) {
+        case 2u: return "DIGITAL_IN";
+        case 3u: return "DIGITAL_OUT";
+        case 18u: return "AI_IN";
+        case 19u: return "AO";
+        case 23u: return "HSC_IN";
+        case 24u: return "ENCODER_IN";
+        default: return "NODE";
+    }
+}
+
 static esp_err_t api_status_handler(httpd_req_t *req)
 {
     plc_gateway_state_t st;
     plc_gateway_state_get(&st);
 
-    char json[4096];
+    char json[8192];
+    size_t off = 0u;
 
-    snprintf(json, sizeof(json),
-             "{"
-             "\"connection\":{\"linkStatus\":\"%s\"},"
-             "\"activeGraph\":{\"version\":\"%lu\",\"nodes\":%lu},"
-             "\"runtime\":{"
-             "\"scanAvgMs\":0,"
-             "\"scanMaxMs\":0,"
-             "\"cycleMs\":0,"
-             "\"uptimeMs\":0"
-             "},"
-             "\"io\":{"
-             "\"di\":[],"
-             "\"do\":[]"
-             "}"
-             "}",
-             st.connected ? "ONLINE" : "OFFLINE",
-             (unsigned long)st.active_graph_version,
-             (unsigned long)st.node_count
+    const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000LL);
+    const uint32_t age_ms =
+            (st.last_exchange_ms == 0u || now_ms < st.last_exchange_ms)
+            ? 0u
+            : (now_ms - st.last_exchange_ms);
+
+    const float memory_usage_percent =
+            st.memory_usage_x100 > 0u
+            ? ((float)st.memory_usage_x100 / 100.0f)
+            : 0.0f;
+
+    off += snprintf(&json[off], sizeof(json) - off,
+                    "{"
+                    "\"connection\":{"
+                    "\"ip\":\"192.168.4.1\","
+                    "\"port\":80,"
+                    "\"mode\":\"%s\","
+                    "\"uptime\":\"%lu cycles\","
+                    "\"lastExchangeAgo\":\"%lu ms\","
+                    "\"linkStatus\":\"%s\""
+                    "},"
+                    "\"performance\":{"
+                    "\"scanAvgMs\":%.3f,"
+                    "\"scanMaxMs\":%.3f,"
+                    "\"scanAvgUs\":%lu,"
+                    "\"scanMaxUs\":%lu,"
+                    "\"workAvgMs\":%.3f,"
+                    "\"workMaxMs\":%.3f,"
+                    "\"workAvgUs\":%lu,"
+                    "\"workMaxUs\":%lu,"
+                    "\"cycleRealAvgMs\":%lu,"
+                    "\"cycleRealMaxMs\":%lu,"
+                    "\"scanLimitMs\":%lu,"
+                    "\"cpuLoadPercent\":0,"
+                    "\"memoryUsagePercent\":%.2f,"
+                    "\"crcErrors\":%lu,"
+                    "\"timeouts\":%lu,"
+                    "\"scanLongSteps\":0"
+                    "},"
+                    "\"ioSummary\":{"
+                    "\"diUsed\":%u,"
+                    "\"diTotal\":%u,"
+                    "\"doUsed\":%u,"
+                    "\"doTotal\":%u,"
+                    "\"aiUsed\":%u,"
+                    "\"aiTotal\":%u,"
+                    "\"pwmUsed\":%u,"
+                    "\"pwmTotal\":%u"
+                    "},"
+                    "\"activeGraph\":{"
+                    "\"name\":\"\","
+                    "\"version\":\"%lu\","
+                    "\"nodes\":%lu,"
+                    "\"connections\":0,"
+                    "\"inputs\":%u,"
+                    "\"outputs\":%u,"
+                    "\"compileErrors\":0,"
+                    "\"activatedAt\":\"\","
+                    "\"runState\":\"%s\""
+                    "},"
+                    "\"alarms\":[],"
+                    "\"nodes\":[",
+                    run_state_to_str(st.run_state),
+                    (unsigned long)st.cycle_counter,
+                    (unsigned long)age_ms,
+                    st.connected ? "ONLINE" : "OFFLINE",
+
+                    (double)st.scan_avg_us / 1000.0,
+                    (double)st.scan_max_us / 1000.0,
+                    (unsigned long)st.scan_avg_us,
+                    (unsigned long)st.scan_max_us,
+
+                    (double)st.work_avg_us / 1000.0,
+                    (double)st.work_max_us / 1000.0,
+                    (unsigned long)st.work_avg_us,
+                    (unsigned long)st.work_max_us,
+
+                    (unsigned long)st.cycle_real_avg_ms,
+                    (unsigned long)st.cycle_real_max_ms,
+                    (unsigned long)st.cycle_ms,
+                    (double)memory_usage_percent,
+                    (unsigned long)st.crc_errors,
+                    (unsigned long)st.timeouts,
+
+                    (unsigned)st.di_used,
+                    (unsigned)st.di_total,
+                    (unsigned)st.do_used,
+                    (unsigned)st.do_total,
+                    (unsigned)st.ai_used,
+                    (unsigned)st.ai_total,
+                    (unsigned)st.pwm_used,
+                    (unsigned)st.pwm_total,
+
+                    (unsigned long)st.active_graph_version,
+                    (unsigned long)st.node_count,
+                    (unsigned)st.di_used,
+                    (unsigned)st.do_used,
+                    run_state_to_str(st.run_state)
+    );
+
+    uint32_t emitted = 0u;
+    for (uint32_t i = 0u; i < PLC_GATEWAY_MAX_NODES; i++) {
+        const plc_gateway_node_state_t *n = &st.nodes[i];
+        if (!n->valid) {
+            continue;
+        }
+
+        if (emitted > 0u) {
+            off += snprintf(&json[off], sizeof(json) - off, ",");
+        }
+
+        off += snprintf(&json[off], sizeof(json) - off,
+                        "{"
+                        "\"index\":%u,"
+                        "\"id\":%u,"
+                        "\"type\":\"%s\","
+                        "\"valueType\":0,"
+                        "\"outBool\":%s,"
+                        "\"outInt\":%ld,"
+                        "\"outFloat\":%.3f,"
+                        "\"tonMs\":null,"
+                        "\"toffLeftMs\":null,"
+                        "\"pidSp\":null,"
+                        "\"pidPv\":null,"
+                        "\"pidI\":null,"
+                        "\"pidU\":null,"
+                        "\"forceActive\":%s,"
+                        "\"forceValue\":%s,"
+                        "\"forceLeftMs\":%lu"
+                        "}",
+                        (unsigned)n->index,
+                        (unsigned)n->id,
+                        node_type_to_str(n->type),
+                        n->out_bool ? "true" : "false",
+                        (long)n->out_int,
+                        (double)n->out_float,
+                        n->force_active ? "true" : "false",
+                        n->force_value ? "true" : "false",
+                        (unsigned long)n->force_left_ms
+        );
+
+        emitted++;
+
+        if (off > sizeof(json) - 512u) {
+            break;
+        }
+    }
+
+    off += snprintf(&json[off], sizeof(json) - off,
+                    "],"
+                    "\"isLoading\":false,"
+                    "\"errorMessage\":null"
+                    "}"
     );
 
     return send_json(req, json);

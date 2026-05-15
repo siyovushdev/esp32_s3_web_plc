@@ -15,6 +15,12 @@ void plc_client_start_polling(void);
 
 esp_err_t plc_client_get_status_ext(void);
 
+esp_err_t plc_client_get_status_web_v2(void);
+
+esp_err_t plc_client_get_io_summary(void);
+
+esp_err_t plc_client_get_nodes_snapshot(void);
+
 esp_err_t plc_client_get_node(uint16_t node_index,
                               uint8_t *rsp,
                               size_t rsp_cap,

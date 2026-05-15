@@ -67,29 +67,7 @@ static esp_err_t plc_request_ack(uint8_t cmd,
 
 static void plc_poll_nodes(void)
 {
-    plc_gateway_state_t st;
-    plc_gateway_state_get(&st);
-
-    uint32_t count = st.node_count;
-    if (count > PLC_GATEWAY_MAX_NODES) {
-        count = PLC_GATEWAY_MAX_NODES;
-    }
-
-    for (uint32_t i = 0; i < count; i++) {
-        uint8_t rsp[PLC_LINK_MAX_PAYLOAD_SIZE];
-        uint16_t rsp_len = 0u;
-
-        esp_err_t r = plc_client_get_node((uint16_t)i, rsp, sizeof(rsp), &rsp_len);
-        if (r != ESP_OK) {
-            continue;
-        }
-
-        if (rsp_len >= 4u && rsp[1] == PLC_LINK_RSP_NODE) {
-            (void)plc_gateway_state_update_node_from_node_rsp(&rsp[4], (uint16_t)(rsp_len - 4u));
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(5));
-    }
+    (void)plc_client_get_nodes_snapshot();
 }
 
 static void plc_poll_task(void *arg)
@@ -99,7 +77,8 @@ static void plc_poll_task(void *arg)
     vTaskDelay(pdMS_TO_TICKS(1500));
 
     for (;;) {
-        if (plc_client_get_status_ext() == ESP_OK) {
+        if (plc_client_get_status_web_v2() == ESP_OK) {
+            (void)plc_client_get_io_summary();
             plc_poll_nodes();
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -169,6 +148,94 @@ esp_err_t plc_client_get_status_ext(void)
     }
 
     plc_gateway_state_update_from_status_ext(&rsp[4], (uint16_t)(rsp_len - 4u));
+    return ESP_OK;
+}
+
+esp_err_t plc_client_get_status_web_v2(void)
+{
+    uint8_t rsp[PLC_LINK_MAX_PAYLOAD_SIZE];
+    uint16_t rsp_len = 0u;
+
+    esp_err_t r = plc_request(
+            PLC_LINK_CMD_GET_STATUS_WEB_V2,
+            NULL,
+            0u,
+            rsp,
+            sizeof(rsp),
+            &rsp_len,
+            1000u
+    );
+
+    if (r != ESP_OK) {
+        plc_gateway_state_set_connected(false);
+        return r;
+    }
+
+    if (rsp_len < 4u || rsp[1] != PLC_LINK_RSP_STATUS_WEB_V2) {
+        return ESP_FAIL;
+    }
+
+    plc_gateway_state_update_from_status_web_v2(&rsp[4], (uint16_t)(rsp_len - 4u));
+    return ESP_OK;
+}
+
+esp_err_t plc_client_get_io_summary(void)
+{
+    uint8_t rsp[PLC_LINK_MAX_PAYLOAD_SIZE];
+    uint16_t rsp_len = 0u;
+
+    esp_err_t r = plc_request(
+            PLC_LINK_CMD_GET_IO_SUMMARY,
+            NULL,
+            0u,
+            rsp,
+            sizeof(rsp),
+            &rsp_len,
+            1000u
+    );
+
+    if (r != ESP_OK) {
+        return r;
+    }
+
+    if (rsp_len < 4u || rsp[1] != PLC_LINK_RSP_IO_SUMMARY) {
+        return ESP_FAIL;
+    }
+
+    plc_gateway_state_update_from_io_summary(&rsp[4], (uint16_t)(rsp_len - 4u));
+    return ESP_OK;
+}
+
+esp_err_t plc_client_get_nodes_snapshot(void)
+{
+    uint8_t rsp[PLC_LINK_MAX_PAYLOAD_SIZE];
+    uint16_t rsp_len = 0u;
+
+    uint8_t body[2];
+    plc_put_u16_le(body, 0u);
+
+    esp_err_t r = plc_request(
+            PLC_LINK_CMD_GET_NODES_SNAPSHOT,
+            body,
+            sizeof(body),
+            rsp,
+            sizeof(rsp),
+            &rsp_len,
+            1000u
+    );
+
+    if (r != ESP_OK) {
+        return r;
+    }
+
+    if (rsp_len < 4u || rsp[1] != PLC_LINK_RSP_NODES_SNAPSHOT) {
+        return ESP_FAIL;
+    }
+
+    if (!plc_gateway_state_update_nodes_from_snapshot(&rsp[4], (uint16_t)(rsp_len - 4u))) {
+        return ESP_FAIL;
+    }
+
     return ESP_OK;
 }
 

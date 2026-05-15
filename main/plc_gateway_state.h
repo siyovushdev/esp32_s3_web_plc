@@ -64,6 +64,18 @@ typedef struct {
     uint32_t last_cycle_us;
     uint32_t max_cycle_us;
 
+    uint32_t run_state;
+    uint32_t capabilities;
+
+    uint32_t scan_avg_us;
+    uint32_t scan_max_us;
+    uint32_t work_avg_us;
+    uint32_t work_max_us;
+    uint32_t cycle_real_avg_ms;
+    uint32_t cycle_real_max_ms;
+
+    uint32_t memory_usage_x100;
+
     uint32_t node_count;
     uint32_t cached_node_count;
 
@@ -74,6 +86,21 @@ typedef struct {
     uint32_t heap_total;
     uint32_t heap_free;
     uint32_t heap_min;
+
+    uint16_t di_used;
+    uint16_t di_total;
+    uint16_t do_used;
+    uint16_t do_total;
+    uint16_t ai_used;
+    uint16_t ai_total;
+    uint16_t ao_used;
+    uint16_t ao_total;
+    uint16_t pwm_used;
+    uint16_t pwm_total;
+    uint16_t hsc_used;
+    uint16_t hsc_total;
+    uint16_t encoder_used;
+    uint16_t encoder_total;
 
     uint32_t rx_ok;
     uint32_t crc_errors;
@@ -99,6 +126,12 @@ void plc_gateway_state_set_connected(bool connected);
 void plc_gateway_state_update_from_status_ext(const uint8_t *body, uint16_t len);
 
 bool plc_gateway_state_update_node_from_node_rsp(const uint8_t *body, uint16_t len);
+
+void plc_gateway_state_update_from_status_web_v2(const uint8_t *body, uint16_t len);
+
+void plc_gateway_state_update_from_io_summary(const uint8_t *body, uint16_t len);
+
+bool plc_gateway_state_update_nodes_from_snapshot(const uint8_t *body, uint16_t len);
 
 void plc_gateway_state_clear_nodes(void);
 
