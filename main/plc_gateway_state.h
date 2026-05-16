@@ -71,8 +71,11 @@ typedef struct {
     uint32_t scan_max_us;
     uint32_t work_avg_us;
     uint32_t work_max_us;
-    uint32_t cycle_real_avg_ms;
-    uint32_t cycle_real_max_ms;
+    uint32_t cycle_real_avg_us;
+    uint32_t cycle_real_max_us;
+    uint32_t scan_limit_ms;
+    uint32_t cpu_load_x100;
+    uint32_t scan_long_steps;
 
     uint32_t memory_usage_x100;
 

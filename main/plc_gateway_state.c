@@ -172,7 +172,7 @@ bool plc_gateway_state_update_node_from_node_rsp(const uint8_t *body, uint16_t l
 
 void plc_gateway_state_update_from_status_web_v2(const uint8_t *body, uint16_t len)
 {
-    if (body == NULL || len < 160u) {
+    if (body == NULL || len < 168u) {
         return;
     }
 
@@ -201,12 +201,15 @@ void plc_gateway_state_update_from_status_web_v2(const uint8_t *body, uint16_t l
     s_state.last_cycle_us = plc_get_u32_le(&body[32]);
     s_state.max_cycle_us = plc_get_u32_le(&body[36]);
 
-    s_state.scan_avg_us = s_state.last_cycle_us;
-    s_state.scan_max_us = s_state.max_cycle_us;
-    s_state.work_avg_us = 0u;
-    s_state.work_max_us = 0u;
-    s_state.cycle_real_avg_ms = 0u;
-    s_state.cycle_real_max_ms = 0u;
+    s_state.scan_avg_us = plc_get_u32_le(&body[128]);
+    s_state.scan_max_us = plc_get_u32_le(&body[132]);
+    s_state.work_avg_us = plc_get_u32_le(&body[136]);
+    s_state.work_max_us = plc_get_u32_le(&body[140]);
+    s_state.cycle_real_avg_us = plc_get_u32_le(&body[144]);
+    s_state.cycle_real_max_us = plc_get_u32_le(&body[148]);
+    s_state.scan_limit_ms = plc_get_u32_le(&body[152]);
+    s_state.cpu_load_x100 = plc_get_u32_le(&body[156]);
+    s_state.scan_long_steps = plc_get_u32_le(&body[160]);
 
     s_state.runtime_fault_counter = plc_get_u32_le(&body[40]);
     s_state.runtime_fault = plc_get_u32_le(&body[44]);

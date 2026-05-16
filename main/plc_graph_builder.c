@@ -1,5 +1,5 @@
 #include "plc_graph_builder.h"
-
+#include "friendly_plc/plc_types.h"
 #include "psa/crypto.h"
 
 #include <ctype.h>
@@ -87,8 +87,14 @@ static bool json_get_string(const char *json,
 
 static uint8_t parse_node_type(const char *type)
 {
-    if (strcmp(type, "DI") == 0) return PLC_NODE_DIGITAL_IN;
-    if (strcmp(type, "DO") == 0) return PLC_NODE_DIGITAL_OUT;
+    if (strcmp(type, "DI") == 0 || strcmp(type, "DIGITAL_IN") == 0) {
+        return PLC_NODE_DIGITAL_IN;
+    }
+
+    if (strcmp(type, "DO") == 0 || strcmp(type, "DIGITAL_OUT") == 0) {
+        return PLC_NODE_DIGITAL_OUT;
+    }
+
     if (strcmp(type, "TON") == 0) return PLC_NODE_TON;
     if (strcmp(type, "TOFF") == 0) return PLC_NODE_TOFF;
     if (strcmp(type, "AND") == 0) return PLC_NODE_AND2;

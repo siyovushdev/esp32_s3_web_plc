@@ -5,59 +5,6 @@
 
 #define PLC_GRAPH_MAX_NODES 100u
 
-typedef enum {
-    PLC_VAL_BOOL  = 0,
-    PLC_VAL_INT   = 1,
-    PLC_VAL_FLOAT = 2
-} plc_value_type_t;
-
-typedef enum {
-    PLC_NODE_CONST_BOOL = 0,
-    PLC_NODE_CONST_INT,
-    PLC_NODE_DIGITAL_IN,
-    PLC_NODE_DIGITAL_OUT,
-    PLC_NODE_AND2,
-    PLC_NODE_OR2,
-    PLC_NODE_NOT,
-    PLC_NODE_SR,
-    PLC_NODE_TON,
-    PLC_NODE_TOFF,
-    PLC_NODE_R_TRIG,
-    PLC_NODE_F_TRIG,
-    PLC_NODE_AI_IN,
-    PLC_NODE_COMPARE_GT,
-    PLC_NODE_COMPARE_LT,
-    PLC_NODE_COMPARE_GE,
-    PLC_NODE_MUX2,
-    PLC_NODE_TP,
-    PLC_NODE_HYST,
-    PLC_NODE_SCALE,
-    PLC_NODE_ADD,
-    PLC_NODE_LIMIT,
-    PLC_NODE_PID,
-    PLC_NODE_ANALOG_AVG,
-    PLC_NODE_RAMP,
-    PLC_NODE_LOG,
-    PLC_NODE_AO,
-    PLC_NODE_CTU,
-    PLC_NODE_CTD,
-    PLC_NODE_CTUD,
-    PLC_NODE_WINDOW_CHECK,
-    PLC_NODE_SAFE_OUTPUT,
-    PLC_NODE_ALARM_GEN,
-    PLC_NODE_ALARM_LATCH,
-    PLC_NODE_HEARTBEAT,
-    PLC_NODE_MEM_BOOL,
-    PLC_NODE_MEM_INT,
-    PLC_NODE_MEM_REAL,
-    PLC_NODE_FILTER_AVG,
-    PLC_NODE_MATH_OP,
-    PLC_NODE_CONST_FLOAT,
-    PLC_NODE_HSC_IN,
-    PLC_NODE_ENCODER_IN,
-    PLC_NODE_MAX
-} plc_node_type_t;
-
 typedef struct {
     bool b;
     int32_t i;
@@ -66,6 +13,7 @@ typedef struct {
 
 typedef struct {
     uint16_t id;
+
     uint8_t type;
     uint8_t valueType;
 
@@ -116,5 +64,8 @@ typedef struct {
     plc_node_bin_t nodes[PLC_GRAPH_MAX_NODES];
 } plc_graph_bin_t;
 
-_Static_assert(sizeof(plc_node_bin_t) == 100, "plc_node_bin_t size must match STM32 PlcNode");
-_Static_assert(sizeof(plc_graph_bin_t) == 10008, "plc_graph_bin_t size must match STM32 PlcGraph");
+_Static_assert(sizeof(plc_node_bin_t) == 100,
+               "plc_node_bin_t size must match STM32 PlcNode");
+
+_Static_assert(sizeof(plc_graph_bin_t) == 10008,
+               "plc_graph_bin_t size must match STM32 PlcGraph");

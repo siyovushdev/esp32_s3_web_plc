@@ -12,6 +12,7 @@ idf_component_register(
         "plc_graph_builder.c"
         INCLUDE_DIRS
         "."
+        "../third_party/friendly_plc_core/include"
         REQUIRES
         esp_http_server
         esp_netif
